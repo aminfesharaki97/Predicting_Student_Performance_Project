@@ -1,0 +1,636 @@
+---
+title: "FinalProject"
+author: "Sanjay Regi Philip, Jeffrey Joyner, Amin Fesharaki"
+date: "12/6/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r PackageLoad}
+
+library(MLmetrics)
+library(C50)
+library(nnet)
+library(NeuralNetTools)
+library(caret)
+library(plyr)
+library(rpart)
+library(e1071)
+library(rpart)
+library(rpart.plot)
+library(ggplot2)
+library(tidyverse)
+
+
+student_mat <- read.csv('/Users/datascience/Desktop/Final Project/student-mat.csv', sep = ';')
+student_mat$subject <- "math"
+student_por <- read.csv('/Users/datascience/Desktop/Final Project/student-por.csv', sep = ";")
+student_por$subject <- "portuguese"
+
+student <- rbind(student_mat, student_por)
+
+head(student)
+
+```
+
+
+
+
+__Data Preparation and Exploratory Data Analysis__
+
+
+```{r Parition}
+#Partition Data into Test and Training Datasets
+
+set.seed(7)
+
+n <- dim(student_mat)[1]
+
+
+train_ind <- runif(n) < 0.67
+
+student_train <- student[ train_ind, ]
+student_test <- student[ !train_ind, ]
+
+
+count_train <- nrow(student_train)
+count_test <- nrow(student_test)
+
+counts <- cbind(count_train, count_test)
+
+barplot(counts, main="Data Size", 
+   xlab="Test and Training Data Set")
+```
+
+
+__Find Size of the Data Set__
+
+```{r Size}
+print("The size of the training dataset is")
+print(dim(student_train))
+
+print("The size of the test dataset is")
+print(dim(student_test))
+```
+
+__Checking if Data Values are Balanced __
+
+```{r BalanceCheck}
+# Purpose of this check is to find if there is a balanced number of values in the data set for variables we predict will be significant and to check if the distributions are the same between the training and test data sets.
+print("Check for distrubution of school")
+table(student$school)
+table(student_train$school)
+table(student_test$school)
+
+print("Check for distrubution of age")
+table(student$age)
+table(student_train$age)
+table(student_test$age)
+
+print("Check for distrubution of Final Grade")
+table(student$G3)
+table(student_train$G3)
+table(student_test$G3)
+```
+
+
+__Visualizing the Data Distribution __
+
+```{r Distribution Visualization}
+
+# Purpose of this check is to find if there is a balanced number of values in the data set for variables we predict will be significant and to check if the distribution is the same between both the training and test data sets.
+
+#Histogram of Age (Training)
+ggplot(student_train, aes(age)) + geom_histogram(color="black")+
+labs(x = "\nAge", y = "Count \n")+
+ggtitle("Histogram of Age (Training Data Set)") + theme_bw()
+
+#Histogram of Age (Testing)
+ggplot(student_test, aes(age)) + geom_histogram(color="black")+
+labs(x = "\nAge", y = "Count \n")+
+ggtitle("Histogram of Age (Testing Data Set)") + theme_bw()
+
+
+#Histogram of Study Time (Training)
+ggplot(student_train, aes(studytime)) + geom_histogram(color="black")+
+labs(x = "\nHours", y = "Count \n")+
+ggtitle("Histogram of Study Time (Training Data Set)") + theme_bw()
+
+#Histogram of Study (Testing)
+ggplot(student_test, aes(studytime)) + geom_histogram(color="black")+
+labs(x = "\nHours", y = "Count \n")+
+ggtitle("Histogram of Study Time (Testing Data Set)") + theme_bw()
+
+
+#Histogram of Final Grade (Training)
+ggplot(student_train, aes(G3)) + geom_histogram(color="black")+
+labs(x = "\nFinal Grade", y = "Count \n")+
+ggtitle("Histogram of Final Grade (Training Data Set)") + theme_bw()
+
+#Histogram of Final Grade (Testing)
+ggplot(student_test, aes(G3)) + geom_histogram(color="black")+
+labs(x = "\nFinal Grade", y = "Count \n")+
+ggtitle("Histogram of Final Grade (Testing Data Set)") + theme_bw()
+
+
+#Histogram of failures (Training)
+ggplot(student_train, aes(failures)) + geom_histogram(color="black")+
+labs(x = "\n# of Past Class Failures", y = "Count \n")+
+ggtitle("Histogram of Failures (Training Data Set)") + theme_bw()
+
+#Histogram of failures (Testing)
+ggplot(student_test, aes(failures)) + geom_histogram(color="black")+
+labs(x = "\n# of Past Class Failures", y = "Count \n")+
+ggtitle("Histogram of Failures (Testing Data Set)") + theme_bw()
+
+```
+
+
+
+__Linear Regression__
+
+*__Creating a Linear Regression Model__*
+```{r Linear Regression}
+
+#subset the training dataset for only variables to be used in regression
+
+student_train_linear_subset <- subset(student_train, select = c("age", "traveltime", "studytime", "failures", "famrel", "freetime", "Dalc", "absences", "G1", "G2", "G3"))
+
+
+
+# Now, we standardize both predictor variables and save the output as a data
+# frame. Data frame format is required for running the kmeans() command
+student_train_linear_subset_z <- as.data.frame(scale(student_train_linear_subset))
+
+
+
+model01 <- lm(formula = G3 ~ age + traveltime + studytime + failures + famrel + freetime + Dalc + absences + G1 + G2,
+              data = student_train_linear_subset_z)
+
+summary(model01)
+
+
+```
+
+From the summary of the regression model, we find that a number of the predictor variables are not significant to the model. The variables that do not show significance, or show a very low significance compared to our threshold of a 0.05 significance level include age, traveltime, studytime, famrel, freetime, and Dalc. 
+
+Creating an improved model without the insignificant predictor variables.
+
+```{r Linear Regression 2}
+model02 <- lm(formula = G3 ~ traveltime + failures + absences + G1 + G2,
+              data = student_train_linear_subset_z)
+
+summary(model02)
+```
+
+All the variables in the new model are significant with p-values less than (0.05). 
+
+Next we will use the model to predict G3 scores from the test data.
+
+```{r Linear Regression 3}
+
+#subset the training dataset for only variables to be used in regression
+
+student_test_linear_subset <- subset(student_test, select = c("age", "traveltime", "studytime", "failures", "famrel", "freetime", "Dalc", "absences", "G1", "G2", "G3"))
+
+
+
+# Now, we standardize both predictor variables and save the output as a data
+# frame. Data frame format is required for running the kmeans() command
+student_test_linear_subset_z <- as.data.frame(scale(student_test_linear_subset))
+
+
+
+predictions <- predict(object=model02, newdata=student_test_linear_subset_z)
+
+
+print("MAE Regression is:")
+MAE(student_test_linear_subset_z$G3, predictions)
+
+average_y = mean(student_test_linear_subset_z$G3)
+
+print("MAE Baseline is:")
+MAE(average_y, predictions)
+
+
+
+
+
+```
+
+The mean average error of the regression prediction results are lower than the baseline which means that the model's results are better than the baseline model.
+
+Next we chose to explore if using only highly significant variables, variables with p-value less than 0.01, would lead to an even more accurate model. Therefore we removed the feature 'traveltime' from the mode.
+
+__Create a new Model using only highly significant variables__
+
+```{r Linear Regression 4}
+
+model03 <- lm(formula = G3 ~ failures + absences + G1 + G2,
+              data = student_train_linear_subset_z)
+
+summary(model03)
+```
+
+After creating the model we find the MAE and compare to the earlier model
+
+```{r Linear Regression 5}
+
+# Create predictions using new model
+predictions <- predict(object=model03, newdata=student_test_linear_subset_z)
+
+
+print("MAE Regression is:")
+#MAE(y_pred=predictions, y_true=student_test_linear_subset_z$G3)
+MAE(student_test_linear_subset_z$G3, predictions)
+
+average_y = mean(student_test_linear_subset_z$G3)
+
+print("MAE Baseline is:")
+#MAE(y_pred=predictions, y_true=average_y)
+MAE(average_y, predictions)
+```
+
+The MAE is a small amount lower compared to the 2nd model but it does not show to be a large difference compared to the previous model.
+
+We again create a 4th model but using features of only the highest level of significance.
+
+```{r Linear Regression 6}
+
+model04 <- lm(formula = G3 ~ failures + G2,
+              data = student_train_linear_subset_z)
+
+summary(model04)
+```
+
+
+```{r Linear Regression 7}
+
+# Create predictions using new model
+predictions <- predict(object=model04, newdata=student_test_linear_subset_z)
+
+
+print("MAE Regression is:")
+MAE(student_test_linear_subset_z$G3, predictions)
+
+average_y = mean(student_test_linear_subset_z$G3)
+
+print("MAE Baseline is:")
+MAE(average_y, predictions)
+```
+
+Compared to model 3, the MAE actually increased when including only features that had the highest level of signifiance. This showed us that removing features from the data set potentially lowered the performance of the model rather than improved it. 
+
+Knowing this, the team would recommend to use the 2nd model when attempting to estimate a student's final score and theorize that the variables of traveltime, failures, absences, G1 and G2 are the most important in estimating a student's final exam performance.
+
+__Classification__
+
+*__Are there significant differences in the grades that students are receiving based off of the school that they attend? Using student attributes can we predict the school a student attends?__*
+
+```{r Classification}
+
+# For train for classification
+student_train_class <- subset(student_train, select = c("school", "sex", "address", "famsize", "Pstatus","schoolsup", "famsup", "activities", "higher", "age", "traveltime", "studytime", "failures", "famrel", "freetime", "Dalc", "absences", "G1", "G2", "G3"))
+
+student_train_class$school <- factor(student_train_class$school)
+student_train_class$sex <- factor(student_train_class$sex)
+student_train_class$address <- factor(student_train_class$address)
+student_train_class$famsize <- factor(student_train_class$famsize)
+student_train_class$Pstatus <- factor(student_train_class$Pstatus)
+student_train_class$schoolsup <- factor(student_train_class$schoolsup)
+student_train_class$famsup <- factor(student_train_class$famsup)
+student_train_class$activities <- factor(student_train_class$activities)
+student_train_class$higher <- factor(student_train_class$higher)
+
+
+# min - max Standardization 
+student_train_class$age.mm <- (student_train_class$age - min(student_train_class$age)) / (max(student_train_class$age)- min(student_train_class$age))
+
+student_train_class$traveltime.mm <- (student_train_class$traveltime - min(student_train_class$traveltime)) / (max(student_train_class$traveltime)- min(student_train_class$traveltime))
+
+student_train_class$studytime.mm <- (student_train_class$studytime - min(student_train_class$studytime)) / (max(student_train_class$studytime)- min(student_train_class$studytime))
+
+student_train_class$failures.mm <- (student_train_class$failures - min(student_train_class$failures)) / (max(student_train_class$failures)- min(student_train_class$failures))
+
+student_train_class$famrel.mm <- (student_train_class$famrel - min(student_train_class$famrel)) / (max(student_train_class$famrel)- min(student_train_class$famrel))
+
+student_train_class$freetime.mm <- (student_train_class$freetime - min(student_train_class$freetime)) / (max(student_train_class$freetime)- min(student_train_class$freetime))
+
+student_train_class$Dalc.mm <- (student_train_class$Dalc - min(student_train_class$Dalc)) / (max(student_train_class$Dalc)- min(student_train_class$Dalc))
+
+student_train_class$absences.mm <- (student_train_class$absences - min(student_train_class$absences)) / (max(student_train_class$absences)- min(student_train_class$absences))
+
+student_train_class$G1.mm <- (student_train_class$G1 - min(student_train_class$G1)) / (max(student_train_class$G1)- min(student_train_class$G1))
+
+student_train_class$G2.mm <- (student_train_class$G2 - min(student_train_class$G2)) / (max(student_train_class$G2)- min(student_train_class$G2))
+
+student_train_class$G3.mm <- (student_train_class$G3 - min(student_train_class$G3)) / (max(student_train_class$G3)- min(student_train_class$G3))
+
+#Add new column where Final passing grade (14+/20) = 0 and final failing grade (13-/20) = 1
+student_train_class$G3.p[which(student_train_class$G3<13)] <- 1 
+student_train_class$G3.p[which(student_train_class$G3>=13)] <- 0 
+
+student_train_class$G3.pp[which(student_train_class$G3<13)] <- "Fail" 
+student_train_class$G3.pp[which(student_train_class$G3>=13)] <- "Pass"
+student_train_class$G3.pp <- factor(student_train_class$G3.pp)
+
+
+# For test for classification
+student_test_class <- subset(student_test, select = c("school", "sex", "address", "famsize", "Pstatus","schoolsup", "famsup", "activities", "higher", "age", "traveltime", "studytime", "failures", "famrel", "freetime", "Dalc", "absences", "G1", "G2", "G3"))
+
+student_test_class$school <- factor(student_test_class$school)
+student_test_class$sex <- factor(student_test_class$sex)
+ student_test_class$address <- factor(student_test_class$address)
+student_test_class$famsize <- factor(student_test_class$famsize)
+student_test_class$Pstatus <- factor(student_test_class$Pstatus)
+student_test_class$schoolsup <- factor(student_test_class$schoolsup)
+student_test_class$famsup <- factor(student_test_class$famsup)
+student_test_class$activities <- factor(student_test_class$activities)
+student_test_class$higher <- factor(student_test_class$higher)
+
+
+# min - max Standardization 
+student_test_class$age.mm <- (student_test_class$age - min(student_test_class$age)) / (max(student_test_class$age)- min(student_test_class$age))
+
+student_test_class$traveltime.mm <- (student_test_class$traveltime - min(student_test_class$traveltime)) / (max(student_test_class$traveltime)- min(student_test_class$traveltime))
+
+student_test_class$studytime.mm <- (student_test_class$studytime - min(student_test_class$studytime)) / (max(student_test_class$studytime)- min(student_test_class$studytime))
+
+student_test_class$failures.mm <- (student_test_class$failures - min(student_test_class$failures)) / (max(student_test_class$failures)- min(student_test_class$failures))
+
+student_test_class$famrel.mm <- (student_test_class$famrel - min(student_test_class$famrel)) / (max(student_test_class$famrel)- min(student_test_class$famrel))
+
+student_test_class$freetime.mm <- (student_test_class$freetime - min(student_test_class$freetime)) / (max(student_test_class$freetime)- min(student_test_class$freetime))
+
+student_test_class$Dalc.mm <- (student_test_class$Dalc - min(student_test_class$Dalc)) / (max(student_test_class$Dalc)- min(student_test_class$Dalc))
+
+student_test_class$absences.mm <- (student_test_class$absences - min(student_test_class$absences)) / (max(student_test_class$absences)- min(student_test_class$absences))
+
+student_test_class$G1.mm <- (student_test_class$G1 - min(student_test_class$G1)) / (max(student_test_class$G1)- min(student_test_class$G1))
+
+student_test_class$G2.mm <- (student_test_class$G2 - min(student_test_class$G2)) / (max(student_test_class$G2)- min(student_test_class$G2))
+
+student_test_class$G3.mm <- (student_test_class$G3 - min(student_test_class$G3)) / (max(student_test_class$G3)- min(student_test_class$G3))
+
+#Add new column where Final passing grade (14+/20) = 0 and final failing grade (13-/20) = 1
+student_test_class$G3.p[which(student_test_class$G3<13)] <- 1 
+student_test_class$G3.p[which(student_test_class$G3>=13)] <- 0 
+
+student_test_class$G3.pp[which(student_test_class$G3<13)] <- "Fail" 
+student_test_class$G3.pp[which(student_test_class$G3>=13)] <- "Pass"
+student_test_class$G3.pp <- factor(student_test_class$G3.pp)
+```
+
+
+
+__Create and Plot Neural Network __
+``` {r Neural Network}
+# Creating Neural
+nnet01 <- nnet (G3.p ~ age.mm + traveltime.mm + studytime.mm + failures.mm + famrel.mm + freetime.mm + absences.mm + school + famsize + Pstatus + activities + famsup + higher + sex, data = student_train_class, size = 1, maxit = 100)
+````
+``` {r NN Plot}
+# Plot the neural network.
+
+plotnet(nnet01, neg_col = "red",  y_names = "Final Grade (")
+
+# make predictions (returns probabilities)
+student_train_class$pred_prob <- predict(object = nnet01, newdata = student_train_class)
+
+#Plot
+#chr string indicating color of positive connection weights,  'black'
+#chr string indicating color of negative connection weights, 'red'
+
+````
+
+
+
+
+__Output the Neural Network Weights __
+
+```{r NN Weights}
+
+neuralweights(nnet01)
+```
+
+```{r Weights of Neural Network}
+nnet01$wts
+```
+
+
+__Evaluate Neural Network __
+
+``` {r NN Evaluation}
+#Evaluate the neural network model using the test dataset.Construct a contingency table to compare the actual and predicted values of Response.
+
+# make predictions (returns probabilities)
+student_test_class$pred_prob_test <- predict(object = nnet01, newdata = student_test_class)
+# convert to classes
+student_test_class$pred_test <- (student_test_class$pred_prob_test > 0.5)*1
+
+# performance metrics / Confusion Matrix
+student_test_class[c('G3.p', 'pred_test')] <- lapply(student_test_class[c('G3.p', 'pred_test')], as.factor)
+confusionMatrix(student_test_class$pred_test, student_test_class$G3.p, positive='1')
+cm
+
+
+```
+
+
+__Contingency Table for Neural Network __
+
+```{r NN Contingency}
+ #Contingency Table
+c.pred <- table(student_test_class$G3.p, student_test_class$pred_test)
+rownames(c.pred) <- c("Actual: No", "Actual: Yes")
+colnames(c.pred) <- c("Predicted: No", "Predicted: Yes")
+addmargins(A = c.pred, FUN = list(Total=sum), quiet = TRUE)
+
+TN0 <- c.pred[1,1]
+FN0 <- c.pred[2,1]
+FP0 <- c.pred[1,2]
+TP0 <- c.pred[2,2]
+
+```
+
+__Decision Trees __
+
+``` {r Decision Tree SetUp}
+
+# Setting up Predictions for cart, c5.0 and NB with same predictors as Neural Network
+X = data.frame(age.mm = student_test_class$age.mm, traveltime.mm = student_test_class$traveltime.mm, failures.mm = student_test_class$failures.mm, famrel.mm = student_test_class$famrel.mm, freetime.mm = student_test_class$freetime.mm, absences.mm = student_test_class$absences.mm, school =  student_test_class$school, famsize  = student_test_class$famsize, Pstatus =  student_test_class$Pstatus,  activities  = student_test_class$activities, higher  = student_test_class$higher, studytime.mm = student_test_class$studytime.mm, famsup  = student_test_class$famsup, sex  = student_test_class$sex)
+
+```
+
+
+#(a) Cart
+
+``` {r Cart}
+# Cart Model trained by training data set
+cart  <- rpart(formula = G3.pp ~ age.mm + traveltime.mm + studytime.mm + failures.mm + famrel.mm + freetime.mm + absences.mm + school + famsize + Pstatus + activities + famsup + higher + sex, data = student_train_class, method = "class")
+
+student_test_class$pred_cart <- predict(object = cart, newdata = X)
+
+# Predictions Test Data Set
+Pred_cart = predict(object = cart, newdata = X, type = "class")
+head(Pred_cart)
+```
+
+__Cart Visual __
+
+```{r Cart Visual}
+rpart.plot(cart,type = 4, extra =104, tweak = 1.5)
+#Type 4 - Like 3 but label all nodes, not just leaves. Similar to text.rpart's fancy=TRUE. See also clip.right.labs. (*3*  Draw separate split labels for the left and right directions.)
+
+#Extra 4 - Class models: probability per class of observations in the node (conditioned on the node, sum across a node is 1).
+```
+
+
+__Cart Evaluation __
+
+```{r Cart Evaluation}
+# Evaluation Metrics for Cart
+cart.pred <- table(student_test_class$G3.p, Pred_cart)
+rownames(cart.pred) <- c("Actual: No", "Actual: Yes")
+colnames(cart.pred) <- c("Predicted: No", "Predicted: Yes")
+addmargins(A = cart.pred, FUN = list(Total=sum), quiet = TRUE)
+
+```
+
+
+```{r}
+# Assigning General Form of Table to matrix values for Cart
+TN1 <- cart.pred[1,1]
+FN1 <- cart.pred[2,1]
+FP1 <- cart.pred[1,2]
+TP1 <- cart.pred[2,2]
+```
+
+# (b) C5.0
+```{r C5}
+# C5 model trained by training data set
+
+c5 <- C5.0(formula = G3.pp ~ age.mm + traveltime.mm + studytime.mm + failures.mm + famrel.mm + freetime.mm + absences.mm + school + famsize + Pstatus + activities + famsup + higher + sex, data = student_train_class, control = C5.0Control(minCases=75))
+
+# Predictions Test Data Set
+Pred_c5 = predict(object = c5, newdata = X)
+head(Pred_c5)
+```
+
+__C5 Visual __
+
+```{r C5 Visual}
+plot(c5)
+```
+
+__C5 Evaluation __
+
+```{r C5 Evaluation}
+# Evaluation Metrics for C5.0
+c5.pred <- table(student_test_class$G3.pp, Pred_c5)
+rownames(c5.pred) <- c("Actual: No", "Actual: Yes")
+colnames(c5.pred) <- c("Predicted: No", "Predicted: Yes")
+addmargins(A = c5.pred, FUN = list(Total=sum), quiet = TRUE)
+
+```
+
+__C5 Table __
+
+```{r C5 Table}
+# Assigning General Form of Table to matrix values for C5.0
+TN2 <- c5.pred[1,1]
+FN2 <- c5.pred[2,1]
+FP2 <- c5.pred[1,2]
+TP2 <- c5.pred[2,2]
+```
+
+# (C) Naives Bayes
+```{r NB}
+# Naives Bayes model trained by training data set
+nb01 <- naiveBayes(formula = G3.pp ~ age.mm + traveltime.mm + studytime.mm + failures.mm + famrel.mm + freetime.mm + absences.mm + school + famsize + Pstatus + activities + famsup + higher + sex, data = student_train_class)
+
+# Predictions Test data set
+Pred_NB <- predict(object = nb01, newdata = X)
+head(Pred_NB)
+```
+
+__NB Evaluation __
+
+```{r NB Evaluation}
+# Evaluation Metrics for Naives Bayes
+
+nb.pred <- table(student_test_class$G3.pp, Pred_NB)
+rownames(nb.pred) <- c("Actual: No", "Actual: Yes")
+colnames(nb.pred) <- c("Predicted: No", "Predicted: Yes")
+addmargins(A = nb.pred, FUN = list(Total=sum), quiet = TRUE)
+```
+
+
+__NB Table__
+
+```{r NB Table}
+# Assigning General Form of Table to matrix values for NB
+TN3 <- nb.pred[1,1]
+FN3 <- nb.pred[2,1]
+FP3 <- nb.pred[1,2]
+TP3 <- nb.pred[2,2]
+```
+
+
+
+```{r Baseline}
+#Baseline Model -
+BaselineT <-table(student_test_class$G3.p)
+AccN <- BaselineT[1] / (BaselineT[1] + BaselineT[2]) #Accuracy - All Negative model
+AccP <- BaselineT[2] / (BaselineT[1] + BaselineT[2]) #Accuracy - All Positive model
+cat ("---All Negative Baseline Model----", "\nAccuracy = ", AccN)
+cat ("\n---All Positive Baseline Model----", "\nAccuracy = ", AccP)
+```
+ (A) Accuracy (B) Sensitivity (C) Specificity (D) Error (C) Precision
+
+```{r Results}
+# Neural Network 
+Acc0 <- (TN0 + TP0) / (TN0 + FN0 + FP0 + TP0) # Accuracy
+Sens0 <- (TP0) / (FN0 + TP0) #Sensitivity
+Spec0 <- (TN0) / (TN0 + FP0) # Specificity
+Error0 <- 1 - Acc0 #Error Rate
+Prec0 <- (TP0) / (FP0 + FP0) #Precision 
+
+
+# Cart Model
+Acc1 <- (TN1 + TP1) / (TN1 + FN1 + FP1 + TP1) # Accuracy
+Sens1 <- (TP1) / (FN1 + TP1) #Sensitivity
+Spec1 <- (TN1) / (TN1 + FP1) # Specificity
+Error1 <- 1 - Acc1 #Error Rate
+Prec1 <- (TP1) / (FP1 + FP1) #Precision 
+
+# C5.0 Model
+Acc2 <- (TN2 + TP2) / (TN2 + FN2 + FP2 + TP2) # Accuracy
+Sens2 <- (TP2) / (FN2 + TP2) #Sensitivity
+Spec2 <- (TN2) / (TN2 + FP2) # Specificity
+Error2 <- 1 - Acc2 #Error Rate
+Prec2 <- (TP2) / (FP2 + FP2) #Precision 
+
+# Naives Bayes
+Acc3 <- (TN3 + TP3) / (TN3 + FN3 + FP3 + TP3) # Accuracy
+Sens3 <- (TP3) / (FN3 + TP3) #Sensitivity
+Spec3 <- (TN3) / (TN3 + FP3) # Specificity
+Error3 <- 1 - Acc3 #Error Rate
+Prec3 <- (TP3) / (FP3 + FP3) #Precision 
+
+
+cat ("---Neural Network----", "\nAccuracy = ", Acc0, "\nSensitivity = ", Sens0, "\nSpecificty=", Spec0, "\nError Rate", Error0, "\nPrecision", Prec0)
+cat ("\n---Cart Model---", "\nAccuracy = ", Acc1, "\nSensitivity = ", Sens1, "\nSpecificty=", Spec1, "\nError Rate", Error1, "\nPrecision", Prec1)
+cat ("\n---C5.0 Model---", "\nAccuracy = ", Acc2, "\nSensitivity = ", Sens2, "\nSpecificty=", Spec2, "\nError Rate", Error2, "\nPrecision", Prec2)
+cat ("\n---Naives Bayes---", "\nAccuracy = ", Acc3, "\nSensitivity = ", Sens3, "\nSpecificty=", Spec3, "\nError Rate", Error3, "\nPrecision", Prec3)
+
+```
+
+
+
+
+
+
+
